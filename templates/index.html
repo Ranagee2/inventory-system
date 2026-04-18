@@ -1,0 +1,1842 @@
+<!doctype html>
+<html lang="{{ lang }}" dir="{{ 'rtl' if lang == 'ur' else 'ltr' }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#1e293b">
+    <title>{{ t["title"] }}</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+
+    <script id="sales-labels-data" type="application/json">{{ sales_labels|default([])|tojson }}</script>
+    <script id="sales-values-data" type="application/json">{{ sales_values|default([])|tojson }}</script>
+    <script id="top-products-data" type="application/json">{{ top_selling_products|default([])|tojson }}</script>
+    <script id="stock-data" type="application/json">{{ stock_distribution|default({'labels': [], 'values': []})|tojson }}</script>
+
+    <style>
+        :root{
+            --sidebar-expanded: 280px;
+            --sidebar-collapsed: 84px;
+        }
+
+        body {
+            overflow-x: hidden;
+        }
+
+        /* FIX: suppress transitions during initial sidebar state restore to prevent flicker */
+        body.sidebar-instant .sidebar,
+        body.sidebar-instant .main-content {
+            transition: none !important;
+        }
+
+        .sidebar {
+            transition: width .24s ease, transform .24s ease;
+            will-change: width, transform;
+        }
+
+        .main-content {
+            transition: margin-left .24s ease;
+            margin-left: var(--sidebar-expanded);
+            will-change: margin-left;
+        }
+
+        body.sidebar-collapsed .main-content {
+            margin-left: var(--sidebar-collapsed);
+        }
+
+        body.sidebar-collapsed .sidebar {
+            width: var(--sidebar-collapsed) !important;
+        }
+
+        body.sidebar-collapsed .sidebar-brand,
+        body.sidebar-collapsed .sidebar-section,
+        body.sidebar-collapsed .sidebar-link span,
+        body.sidebar-collapsed .sidebar-footer .btn-text,
+        body.sidebar-collapsed .lang-toggle,
+        body.sidebar-collapsed .online-badge {
+            display: none !important;
+        }
+
+        body.sidebar-collapsed .sidebar-header {
+            justify-content: center;
+        }
+
+        body.sidebar-collapsed .sidebar-link {
+            justify-content: center;
+            gap: 0 !important;
+        }
+
+        body.sidebar-collapsed .sidebar-link i {
+            margin-right: 0 !important;
+            margin-inline-end: 0 !important;
+            font-size: 1.08rem;
+        }
+
+        body.sidebar-collapsed .sidebar-footer {
+            align-items: center;
+        }
+
+        .sidebar-collapse-toggle {
+            width: 100%;
+            border-radius: 16px;
+            border: 1px solid rgba(255,255,255,.12);
+            background: rgba(255,255,255,.06);
+            color: #fff;
+            padding: .7rem .9rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: .55rem;
+            min-height: 48px;
+        }
+
+        .sidebar-collapse-toggle:hover {
+            background: rgba(255,255,255,.1);
+        }
+
+        .receipt-row.empty-row .remove-row-btn {
+            display: none !important;
+        }
+
+        .receipt-row td {
+            vertical-align: middle;
+        }
+
+        .customer-search-box {
+            position: relative;
+        }
+
+        .customer-suggestions {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: calc(100% + 6px);
+            z-index: 1050;
+            background: #fff;
+            border: 1px solid rgba(0,0,0,.08);
+            border-radius: 16px;
+            box-shadow: 0 12px 32px rgba(0,0,0,.12);
+            max-height: 280px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        .customer-suggestion-item {
+            padding: .8rem 1rem;
+            border-bottom: 1px solid rgba(0,0,0,.05);
+            cursor: pointer;
+            transition: background .15s ease;
+        }
+
+        .customer-suggestion-item:hover,
+        .customer-suggestion-item.active {
+            background: rgba(13,110,253,.08);
+        }
+
+        .customer-suggestion-item:last-child {
+            border-bottom: 0;
+        }
+
+        .customer-suggestion-name {
+            font-weight: 700;
+        }
+
+        .customer-suggestion-meta {
+            font-size: .82rem;
+            color: #6b7280;
+        }
+
+        .shortcut-pill {
+            display: inline-block;
+            min-width: 88px;
+            text-align: center;
+            padding: .28rem .55rem;
+            border-radius: 999px;
+            background: #eef2ff;
+            color: #1e3a8a;
+            font-weight: 700;
+            font-size: .82rem;
+        }
+
+        .small-muted {
+            color: #6b7280;
+            font-size: .9rem;
+        }
+
+        @media (max-width: 991.98px) {
+            .main-content {
+                margin-left: 0 !important;
+            }
+
+            .sidebar {
+                width: var(--sidebar-expanded) !important;
+                transform: translateX(-100%);
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+
+            body.sidebar-collapsed .sidebar {
+                transform: translateX(-100%) !important;
+                width: var(--sidebar-expanded) !important;
+            }
+        }
+    </style>
+</head>
+<body
+    data-page="{{ page }}"
+    {% if page == 'receipt_detail' %}
+    data-receipt-print-base="{{ url_for('view_receipt', receipt_id=receipt.id) }}"
+    data-autoprint="{{ '1' if autoprint else '0' }}"
+    {% endif %}
+>
+<!-- FIX: apply sidebar collapsed state immediately before first paint to prevent transition flicker -->
+<script>
+(function(){
+    if(localStorage.getItem("sidebarCollapsed")==="1"){
+        document.body.classList.add("sidebar-collapsed","sidebar-instant");
+    }
+})();
+</script>
+
+<aside class="sidebar no-print" id="sidebar">
+    <div class="sidebar-header">
+        <div class="brand-icon"><i class="bi bi-receipt-cutoff text-white"></i></div>
+        <a class="sidebar-brand" href="{{ url_for('index') }}">{{ t["title"] }}</a>
+    </div>
+
+    <nav class="sidebar-nav">
+        <div class="sidebar-section">{{ t["home"] }}</div>
+        <a class="sidebar-link {% if page == 'home' %}active{% endif %}" href="{{ url_for('index') }}" title="Alt+H">
+            <i class="bi bi-grid-1x2"></i><span>{{ t["dashboard"] }}</span>
+        </a>
+
+        <div class="sidebar-section">{{ t["products"] }}</div>
+        <a class="sidebar-link {% if page in ['product_form','product_detail'] and form_mode == 'add' %}active{% endif %}" href="{{ url_for('add_product') }}" title="Alt+N">
+            <i class="bi bi-plus-circle"></i><span>{{ t["add_product"] }}</span>
+        </a>
+
+        <div class="sidebar-section">{{ t["receipts"] }}</div>
+        <a class="sidebar-link {% if page == 'receipt_form' %}active{% endif %}" href="{{ url_for('create_receipt') }}" title="Alt+R">
+            <i class="bi bi-cart-check"></i><span>{{ t["create_receipt"] }}</span>
+        </a>
+
+        <div class="sidebar-section">{{ t["customers"] }}</div>
+        <a class="sidebar-link {% if page in ['customers','customer_form'] %}active{% endif %}" href="{{ url_for('customers') }}" title="Alt+C">
+            <i class="bi bi-people"></i><span>{{ t["customers"] }}</span>
+        </a>
+
+        <div class="sidebar-section mt-2">{{ t["analytics"] }}</div>
+        <a class="sidebar-link" href="{{ url_for('index') }}#analytics">
+            <i class="bi bi-bar-chart-line"></i><span>{{ t["analytics"] }}</span>
+        </a>
+    </nav>
+
+    <div class="sidebar-footer">
+        <button class="sync-btn mb-1" onclick="showShortcutsModal()" style="background:rgba(255,255,255,0.05); border-color:rgba(255,255,255,0.12);">
+            <i class="bi bi-keyboard"></i> <span class="btn-text">{{ t["keyboard_shortcuts"] }}</span> <small class="opacity-50">(?)</small>
+        </button>
+
+        <button class="sync-btn mb-1" type="button" onclick="showShortcutSettingsModal()" style="background:rgba(255,255,255,0.05); border-color:rgba(255,255,255,0.12);">
+            <i class="bi bi-sliders"></i> <span class="btn-text">Custom Shortcuts</span>
+        </button>
+
+        <button class="sync-btn" id="syncBtn" onclick="triggerSync()" title="{{ t['sync_now'] }}">
+            <i class="bi bi-cloud-arrow-up" id="syncIcon"></i> <span class="btn-text">{{ t["sync_now"] }}</span>
+        </button>
+
+        <button class="sidebar-collapse-toggle mt-1" type="button" onclick="toggleSidebarCollapse()" id="sidebarCollapseBtn" title="Sidebar fold/unfold">
+            <i class="bi" id="sidebarCollapseIcon"></i>
+            <span class="btn-text" id="sidebarCollapseLabel"></span>
+        </button>
+
+        <div class="lang-toggle mt-1">
+            <a class="lang-btn {% if lang == 'en' %}current{% endif %}" href="{{ url_for('set_lang', code='en') }}">EN</a>
+            <a class="lang-btn {% if lang == 'ur' %}current{% endif %}" href="{{ url_for('set_lang', code='ur') }}">اردو</a>
+        </div>
+
+        <div class="online-badge mt-1">
+            <div class="online-dot" id="onlineDot"></div>
+            <span id="onlineLabel">Checking...</span>
+        </div>
+    </div>
+</aside>
+
+<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
+
+<button class="sidebar-toggle no-print" id="sidebarToggle" onclick="toggleSidebar()" aria-label="Menu">
+    <i class="bi" id="toggleIcon"></i>
+</button>
+
+<div class="main-content">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="mb-3 no-print">
+          {% for category, message in messages %}
+            <div class="alert alert-{{ category }} alert-dismissible fade show shadow-sm border-0" role="alert">
+              {{ message }}
+              <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% if page == "home" %}
+        <div class="hero-card glass-card p-4 p-lg-5 mb-4 fade-up">
+            <div class="row align-items-center g-4 position-relative">
+                <div class="col-lg-8">
+                    <span class="hero-badge mb-3">
+                        <i class="bi bi-lightning-charge-fill"></i>{{ t["dashboard"] }}
+                    </span>
+                    <h1 class="display-6 fw-bold mb-2">{{ t["title"] }}</h1>
+                    <p class="text-muted mb-3">
+                        Products, receipts, customer discounts, stock control, WhatsApp sharing, and sales analytics.
+                    </p>
+                    <div class="d-flex flex-wrap gap-2">
+                        <span class="chip"><i class="bi bi-box-seam"></i>{{ products_count }} {{ t["products"] }}</span>
+                        <span class="chip"><i class="bi bi-receipt"></i>{{ receipts_count }} {{ t["receipts"] }}</span>
+                        <span class="chip"><i class="bi bi-people"></i>{{ customers_count }} {{ t["customers"] }}</span>
+                        <span class="chip"><i class="bi bi-exclamation-triangle"></i>{{ low_stock_count }} {{ t["low_stock_count"] }}</span>
+                        <span class="chip"><i class="bi bi-x-circle"></i>{{ out_of_stock_count }} {{ t["out_of_stock_count"] }}</span>
+                    </div>
+                </div>
+                <div class="col-lg-4">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-body">
+                            <div class="small-muted mb-1">{{ t["quick_actions"] }}</div>
+                            <div class="d-grid gap-2">
+                                <a href="{{ url_for('add_product') }}" class="btn btn-primary">
+                                    <i class="bi bi-plus-circle me-1"></i>{{ t["add_product"] }}
+                                    <kbd class="ms-1 opacity-50" style="font-size:0.65rem;">Alt+N</kbd>
+                                </a>
+                                <a href="{{ url_for('create_receipt') }}" class="btn btn-success">
+                                    <i class="bi bi-cart-check me-1"></i>{{ t["create_receipt"] }}
+                                    <kbd class="ms-1 opacity-50" style="font-size:0.65rem;">Alt+R</kbd>
+                                </a>
+                                <a href="{{ url_for('customers') }}" class="btn btn-warning">
+                                    <i class="bi bi-person-plus me-1"></i>{{ t["add_customer"] }}
+                                    <kbd class="ms-1 opacity-50" style="font-size:0.65rem;">Alt+C</kbd>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-4 no-print">
+            <div class="col-6 col-md-3">
+                <div class="card stat-card border-0 fade-up" style="animation-delay:.03s;">
+                    <div class="card-body">
+                        <div class="text-muted small">{{ t["total_sales"] }}</div>
+                        <h3 class="mb-0 fw-bold">{{ "%.0f"|format(total_sales or 0) }}</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card stat-card border-0 fade-up" style="animation-delay:.08s;">
+                    <div class="card-body">
+                        <div class="text-muted small">{{ t["today_sales"] }}</div>
+                        <h3 class="mb-0 fw-bold">{{ "%.0f"|format(today_sales or 0) }}</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card stat-card border-0 fade-up" style="animation-delay:.13s;">
+                    <div class="card-body">
+                        <div class="text-muted small">{{ t["weekly_sales"] }}</div>
+                        <h3 class="mb-0 fw-bold">{{ "%.0f"|format(weekly_sales or 0) }}</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card stat-card border-0 fade-up" style="animation-delay:.18s;">
+                    <div class="card-body">
+                        <div class="text-muted small">{{ t["monthly_sales"] }}</div>
+                        <h3 class="mb-0 fw-bold">{{ "%.0f"|format(monthly_sales or 0) }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4 mb-4 no-print" id="analytics">
+            <div class="col-lg-8">
+                <div class="card card-hover fade-up">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="mb-0 section-title">{{ t["sales_trend"] }}</h5>
+                        </div>
+                        <div class="chart-box tall"><canvas id="salesTrendChart"></canvas></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-4">
+                <div class="card card-hover fade-up">
+                    <div class="card-body">
+                        <h5 class="mb-3 section-title">{{ t["stock_status"] }}</h5>
+                        <div class="chart-box"><canvas id="stockStatusChart"></canvas></div>
+                        <div class="divider"></div>
+                        <div class="d-flex justify-content-between small-muted">
+                            <span>{{ t["products"] }}</span><strong>{{ stock_distribution["values"][0] }}</strong>
+                        </div>
+                        <div class="d-flex justify-content-between small-muted">
+                            <span>{{ t["low_stock"] }}</span><strong>{{ stock_distribution["values"][1] }}</strong>
+                        </div>
+                        <div class="d-flex justify-content-between small-muted">
+                            <span>{{ t["out_of_stock"] }}</span><strong>{{ stock_distribution["values"][2] }}</strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-lg-8">
+                <div class="d-flex justify-content-between align-items-center mb-3 no-print">
+                    <h4 class="mb-0 section-title">{{ t["manage_products"] }}</h4>
+                    <span class="badge text-bg-secondary">{{ products|length }} {{ t["products"] }}</span>
+                </div>
+
+                <form class="d-flex gap-2 mb-3 no-print" method="GET" action="{{ url_for('index') }}">
+                    <input type="search" name="q" class="form-control form-control-lg" value="{{ query }}" placeholder="{{ t['search_placeholder'] }}">
+                    <button class="btn btn-primary px-4" type="submit">{{ t["search"] }}</button>
+                </form>
+
+                <div class="row g-3">
+                    {% for product in products %}
+                    <div class="col-12">
+                        <div class="card product-card fade-up">
+                            <div class="card-body d-flex align-items-center gap-3 flex-wrap">
+                                {% if product.image_path %}
+                                    <img src="{{ url_for('static', filename=product.image_path) }}" class="product-thumb" alt="product image">
+                                {% else %}
+                                    <div class="product-thumb thumb-placeholder">-</div>
+                                {% endif %}
+
+                                <div class="flex-grow-1" style="min-width:0;">
+                                    <h5 class="mb-1 fw-bold urdu-name product-name">{{ product.name }}</h5>
+                                    <div class="small-muted mb-1">{{ t["size"] }}: {{ product.size or "-" }}</div>
+                                    <p class="mb-2 text-muted small text-truncate">{{ product.description or "" }}</p>
+
+                                    <div class="d-flex gap-3 flex-wrap align-items-center">
+                                        <span><strong>{{ t["price"] }}:</strong> {{ "%.2f"|format(product.price) }}</span>
+                                        <span>
+                                            <strong>{{ t["stock"] }}:</strong>
+                                            {% if product.quantity == 0 %}
+                                                <span class="badge bg-danger">{{ t["out_of_stock"] }}</span>
+                                            {% elif product.quantity <= low_stock_threshold %}
+                                                <span class="badge bg-warning text-dark">{{ product.quantity }} {{ t["low_stock"] }}</span>
+                                            {% else %}
+                                                <span class="badge bg-success">{{ product.quantity }}</span>
+                                            {% endif %}
+                                        </span>
+                                    </div>
+
+                                    <div class="progress mt-2" style="max-width:220px;">
+                                        {% set pct = (product.quantity / 20 * 100) if product.quantity < 20 else 100 %}
+                                        <div class="progress-bar {% if product.quantity == 0 %}bg-danger{% elif product.quantity <= low_stock_threshold %}bg-warning{% else %}bg-success{% endif %}"
+                                             data-pct="{{ pct }}"></div>
+                                    </div>
+                                </div>
+
+                                <div class="d-flex flex-wrap gap-2 no-print">
+                                    <a href="{{ url_for('view_product', product_id=product.id) }}" class="btn btn-sm btn-outline-primary">{{ t["view"] }}</a>
+                                    <a href="{{ url_for('edit_product', product_id=product.id) }}" class="btn btn-sm btn-warning">{{ t["edit"] }}</a>
+                                    <form method="POST" action="{{ url_for('delete_product', product_id=product.id) }}" onsubmit="return confirm('Delete this product?');">
+                                        <button type="submit" class="btn btn-sm btn-danger">{{ t["delete"] }}</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="col-12">
+                        <div class="alert alert-info mb-0">{{ t["no_products"] }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="col-lg-4 no-print">
+                <div class="card mb-3 fade-up">
+                    <div class="card-body">
+                        <h5 class="mb-3 section-title">{{ t["top_products_by_revenue"] }}</h5>
+                        {% if top_selling_products %}
+                            <div class="chart-box"><canvas id="topProductsChart"></canvas></div>
+                        {% else %}
+                            <div class="alert alert-light mb-0">{{ t["no_products"] }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="card mb-3 fade-up">
+                    <div class="card-body">
+                        <h5 class="mb-3 section-title">{{ t["low_stock_products"] }}</h5>
+                        {% if low_stock_products %}
+                            <div class="table-responsive">
+                                <table class="table table-sm align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>{{ t["image"] }}</th>
+                                            <th>{{ t["product_name"] }}</th>
+                                            <th>{{ t["stock"] }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for product in low_stock_products %}
+                                        <tr>
+                                            <td>
+                                                {% if product.image_path %}
+                                                    <img src="{{ url_for('static', filename=product.image_path) }}" class="table-thumb" alt="">
+                                                {% else %}
+                                                    <div class="table-thumb thumb-placeholder">-</div>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <a href="{{ url_for('view_product', product_id=product.id) }}" class="soft-link fw-semibold urdu-name">
+                                                    {{ product.name }}
+                                                </a>
+                                            </td>
+                                            <td>
+                                                {% if product.quantity == 0 %}
+                                                    <span class="badge bg-danger">{{ t["out_of_stock"] }}</span>
+                                                {% else %}
+                                                    <span class="badge bg-warning text-dark">{{ product.quantity }}</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <div class="alert alert-light mb-0">{{ t["no_products"] }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="card fade-up">
+                    <div class="card-body">
+                        <h5 class="mb-3 section-title">{{ t["recent_receipts"] }}</h5>
+                        {% if recent_receipts %}
+                            <div class="list-group">
+                                {% for r in recent_receipts %}
+                                <a href="{{ url_for('view_receipt', receipt_id=r.id) }}" class="list-group-item list-group-item-action border-0 mb-2 rounded-4 shadow-sm">
+                                    <div class="d-flex justify-content-between">
+                                        <strong>{{ r.receipt_number }}</strong>
+                                        <span>{{ "%.2f"|format(r.total_amount) }}</span>
+                                    </div>
+                                    <small class="text-muted">{{ r.customer_name or "-" }}</small>
+                                </a>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="alert alert-light mb-0">{{ t["no_receipts"] }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+    {% if page == "customers" %}
+        <div class="row justify-content-center">
+            <div class="col-lg-10">
+                <div class="card fade-up">
+                    <div class="card-body p-4 p-lg-5">
+                        <div class="d-flex justify-content-between align-items-center mb-4 no-print">
+                            <h4 class="mb-0 section-title">{{ t["manage_customers"] }}</h4>
+                            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm">{{ t["back"] }}</a>
+                        </div>
+
+                        <!-- FIX: explicit method="POST" and enctype ensure form data is sent correctly -->
+                        <form method="POST" action="{{ form_action }}" enctype="application/x-www-form-urlencoded" class="mb-4">
+                            <div class="row g-3">
+                                <div class="col-sm-6 col-md-4">
+                                    <label class="form-label">{{ t["customer_name"] }}</label>
+                                    <input type="text" name="name" class="form-control form-control-lg" value="{{ request.form.get('name', '') }}">
+                                </div>
+                                <div class="col-sm-6 col-md-4">
+                                    <label class="form-label">{{ t["customer_whatsapp"] }}</label>
+                                    <input type="text" name="whatsapp" class="form-control form-control-lg" value="{{ request.form.get('whatsapp', '') }}">
+                                </div>
+                                <div class="col-sm-6 col-md-4">
+                                    <label class="form-label">{{ t["discount_percent"] }}</label>
+                                    <input type="number" step="0.01" min="0" max="100" name="discount_percent" class="form-control form-control-lg" value="{{ request.form.get('discount_percent', '0') }}">
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">{{ t["customer_facebook"] }}</label>
+                                    <input type="text" name="facebook" class="form-control form-control-lg" value="{{ request.form.get('facebook', '') }}">
+                                </div>
+                            </div>
+                            <button type="submit" name="_action" value="add_customer" class="btn btn-primary btn-lg px-4 mt-3">{{ t["add_customer"] }}</button>
+                        </form>
+
+                        <div class="divider"></div>
+
+                        {% if customers_list %}
+                            <div class="table-responsive">
+                                <table class="table align-middle">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>{{ t["customer_name"] }}</th>
+                                            <th>{{ t["customer_whatsapp"] }}</th>
+                                            <th>{{ t["discount_percent"] }}</th>
+                                            <th class="d-none d-md-table-cell">{{ t["customer_facebook"] }}</th>
+                                            <th class="text-end no-print">{{ t["view"] }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for customer in customers_list %}
+                                        <tr>
+                                            <td class="fw-semibold">{{ customer.name }}</td>
+                                            <td>{{ customer.whatsapp or "-" }}</td>
+                                            <td><span class="badge bg-info text-dark">{{ "%.2f"|format(customer.discount_percent or 0) }}%</span></td>
+                                            <td class="text-break d-none d-md-table-cell">{{ customer.facebook or "-" }}</td>
+                                            <td class="text-end no-print">
+                                                <a href="{{ url_for('edit_customer', customer_id=customer.id) }}" class="btn btn-sm btn-warning">{{ t["edit"] }}</a>
+                                                <form method="POST" action="{{ url_for('delete_customer', customer_id=customer.id) }}" class="d-inline" onsubmit="return confirm('Delete?');">
+                                                    <button type="submit" class="btn btn-sm btn-danger">{{ t["delete"] }}</button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <div class="alert alert-info mb-0">{{ t["no_customers"] }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+    {% if page == "customer_form" %}
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                <div class="card fade-up">
+                    <div class="card-body p-4 p-lg-5">
+                        <div class="d-flex justify-content-between align-items-center mb-4 no-print">
+                            <h4 class="mb-0 section-title">{{ t["edit_customer"] }}</h4>
+                            <a href="{{ url_for('customers') }}" class="btn btn-outline-secondary btn-sm">{{ t["back"] }}</a>
+                        </div>
+                        <!-- FIX: explicit enctype ensures all fields transmitted -->
+                        <form method="POST" action="{{ form_action }}" enctype="application/x-www-form-urlencoded">
+                            <div class="row g-3">
+                                <div class="col-sm-6 col-md-4">
+                                    <label class="form-label">{{ t["customer_name"] }}</label>
+                                    <input type="text" name="name" class="form-control form-control-lg" value="{{ request.form.get('name', customer.name if customer else '') }}">
+                                </div>
+                                <div class="col-sm-6 col-md-4">
+                                    <label class="form-label">{{ t["customer_whatsapp"] }}</label>
+                                    <input type="text" name="whatsapp" class="form-control form-control-lg" value="{{ request.form.get('whatsapp', customer.whatsapp if customer else '') }}">
+                                </div>
+                                <div class="col-sm-6 col-md-4">
+                                    <label class="form-label">{{ t["discount_percent"] }}</label>
+                                    <input type="number" step="0.01" min="0" max="100" name="discount_percent" class="form-control form-control-lg" value="{{ request.form.get('discount_percent', customer.discount_percent if customer else 0) }}">
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">{{ t["customer_facebook"] }}</label>
+                                    <input type="text" name="facebook" class="form-control form-control-lg" value="{{ request.form.get('facebook', customer.facebook if customer else '') }}">
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-lg px-4 mt-3">{{ t["edit_customer"] }}</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+    {% if page == "product_detail" %}
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                <div class="card fade-up">
+                    <div class="card-body p-4 p-lg-5">
+                        <div class="d-flex justify-content-between align-items-center mb-3 no-print">
+                            <h4 class="mb-0 section-title">{{ t["product_details"] }}</h4>
+                            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm">{{ t["back"] }}</a>
+                        </div>
+                        <div class="d-flex align-items-center gap-3 mb-3">
+                            {% if product.image_path %}
+                                <img src="{{ url_for('static', filename=product.image_path) }}" class="product-thumb" alt="">
+                            {% else %}
+                                <div class="product-thumb thumb-placeholder">-</div>
+                            {% endif %}
+                            <div>
+                                <h3 class="mb-1 fw-bold urdu-name">{{ product.name }}</h3>
+                                <div class="text-muted">{{ t["size"] }}: {{ product.size or "-" }}</div>
+                            </div>
+                        </div>
+                        <p class="mb-3 text-muted">{{ product.description or "" }}</p>
+                        <div class="row g-3 mb-4">
+                            <div class="col-6">
+                                <div class="p-3 bg-light rounded-4 border">
+                                    <div class="text-muted">{{ t["price"] }}</div>
+                                    <div class="fw-bold fs-5">{{ "%.2f"|format(product.price) }}</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="p-3 bg-light rounded-4 border">
+                                    <div class="text-muted">{{ t["stock"] }}</div>
+                                    <div class="fw-bold fs-5">{{ product.quantity }}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 no-print">
+                            <a href="{{ url_for('edit_product', product_id=product.id) }}" class="btn btn-warning">{{ t["edit"] }}</a>
+                            <a href="{{ product_whatsapp_share_url }}" target="_blank" rel="noopener" class="btn btn-success">{{ t["share_on_whatsapp"] }}</a>
+                            <button type="button" class="btn btn-primary copy-text-btn" data-copy-text="{{ product_share_text|e }}">{{ t["share_on_facebook"] }}</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+    {% if page == "product_form" %}
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                <div class="card fade-up">
+                    <div class="card-body p-4 p-lg-5">
+                        <div class="d-flex justify-content-between align-items-center mb-4 no-print">
+                            <h4 class="mb-0 section-title">
+                                {% if form_mode == "edit" %}{{ t["edit_product"] }}{% else %}{{ t["add_product"] }}{% endif %}
+                            </h4>
+                            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm">{{ t["back"] }}</a>
+                        </div>
+                        <!-- FIX: enctype="multipart/form-data" is required for file upload; kept on all product forms -->
+                        <form method="POST" enctype="multipart/form-data" action="{{ form_action }}">
+                            <div class="mb-3">
+                                <label class="form-label">{{ t["product_name"] }}</label>
+                                <input type="text" name="name" dir="auto" class="form-control form-control-lg urdu-name"
+                                       value="{{ request.form.get('name', product.name if product else '') }}"
+                                       placeholder="Product name / پروڈکٹ کا نام">
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-sm-4">
+                                    <label class="form-label">{{ t["price"] }}</label>
+                                    <input type="number" step="0.01" name="price" class="form-control form-control-lg"
+                                           value="{{ request.form.get('price', product.price if product else '') }}">
+                                </div>
+                                <div class="col-sm-4">
+                                    <label class="form-label">{{ t["stock"] }}</label>
+                                    <input type="number" name="quantity" class="form-control form-control-lg"
+                                           value="{{ request.form.get('quantity', product.quantity if product else '') }}">
+                                </div>
+                                <div class="col-sm-4">
+                                    <label class="form-label">{{ t["size"] }}</label>
+                                    <input type="text" name="size" class="form-control form-control-lg"
+                                           value="{{ request.form.get('size', product.size if product else '') }}">
+                                </div>
+                            </div>
+                            <div class="mb-3 mt-3">
+                                <label class="form-label">{{ t["description"] }}</label>
+                                <textarea name="description" dir="auto" class="form-control" rows="3">{{ request.form.get('description', product.description if product else '') }}</textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">{{ t["image"] }}</label>
+                                <input type="file" name="image" class="form-control" accept="image/*">
+                                <div class="form-text">
+                                    {% if form_mode == "edit" %}{{ t["optional_new_image"] }}{% else %}PNG, JPG, JPEG, GIF, WEBP{% endif %}
+                                </div>
+                            </div>
+                            {% if form_mode == "edit" and product and product.image_path %}
+                                <div class="mb-3">
+                                    <label class="form-label">{{ t["current_image"] }}</label><br>
+                                    <img src="{{ url_for('static', filename=product.image_path) }}" alt="" class="img-thumbnail rounded-4" style="max-width:160px;">
+                                </div>
+                            {% endif %}
+                            <button type="submit" class="btn btn-primary btn-lg px-4">
+                                {% if form_mode == "edit" %}{{ t["update_product"] }}{% else %}{{ t["save_product"] }}{% endif %}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+    {% if page == "receipt_form" %}
+        <div class="row justify-content-center">
+            <div class="col-lg-11">
+                <div class="card fade-up">
+                    <div class="card-body p-3 p-lg-5">
+                        <div class="d-flex justify-content-between align-items-center mb-4 no-print">
+                            <h4 class="mb-0 section-title">{{ t["create_receipt"] }}</h4>
+                            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm">{{ t["back"] }}</a>
+                        </div>
+
+                        <!-- FIX: explicit enctype for non-file form; ensures field names are sent correctly -->
+                        <form method="POST" action="{{ url_for('create_receipt') }}" enctype="application/x-www-form-urlencoded">
+                            <div class="row g-3 align-items-stretch mb-4">
+                                <div class="col-lg-8">
+                                    <div class="p-3 p-lg-4 border rounded-4 bg-light h-100">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <label class="form-label mb-0">{{ t["select_customer"] }}</label>
+                                            <span class="small text-muted">{{ t["customer_discount_applied"] }}</span>
+                                        </div>
+
+                                        <div class="customer-search-box mb-3">
+                                            <div class="input-group input-group-lg">
+                                                <input type="text" id="customerSearchInput" class="form-control" placeholder="{{ t['search_customer_placeholder'] }}" autocomplete="off">
+                                                <button type="button" class="btn btn-outline-primary" onclick="searchCustomer()">{{ t["search_customer"] }}</button>
+                                            </div>
+                                            <div id="customerSuggestions" class="customer-suggestions"></div>
+                                        </div>
+
+                                        <select name="customer_id" id="customerSelect" class="form-select form-select-lg">
+                                            <option value="">{{ t["anonymous_customer"] }}</option>
+                                            {% for customer in customers_list %}
+                                                <option value="{{ customer.id }}"
+                                                        data-name="{{ customer.name }}"
+                                                        data-whatsapp="{{ customer.whatsapp or '' }}"
+                                                        data-facebook="{{ customer.facebook or '' }}"
+                                                        data-discount="{{ customer.discount_percent or 0 }}"
+                                                        {% if selected_customer_id and selected_customer_id|string == customer.id|string %}selected{% endif %}>
+                                                    {{ customer.name }} — {{ "%.2f"|format(customer.discount_percent or 0) }}%
+                                                </option>
+                                            {% endfor %}
+                                        </select>
+
+                                        <div class="small text-muted mt-2">{{ t["search_customer_hint"] }}</div>
+                                    </div>
+                                </div>
+
+                                <div class="col-lg-4">
+                                    <div class="p-3 p-lg-4 border rounded-4 bg-white h-100">
+                                        <div class="small-muted mb-1">{{ t["discount_percent"] }}</div>
+                                        <div class="fw-bold fs-2" id="customerDiscountPreview">0%</div>
+                                        <div class="mt-3 small text-muted">{{ t["receipt_rows_hint"] }}</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <div>
+                                    <h5 class="mb-1 section-title">{{ t["sale_section"] }}</h5>
+                                    <div class="text-muted small">{{ t["receipt_rows_hint"] }}</div>
+                                </div>
+                                <button type="button" class="btn btn-outline-primary btn-sm" onclick="addReceiptRow(true)">
+                                    <i class="bi bi-plus-circle me-1"></i>{{ t["add_row"] }}
+                                </button>
+                            </div>
+
+                            <div class="table-responsive mt-3">
+                                <table class="table table-bordered align-middle">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th style="width:60px;">#</th>
+                                            <th>{{ t["select_product"] }}</th>
+                                            <th style="width:120px;">{{ t["quantity"] }}</th>
+                                            <th style="width:110px;" class="no-print">{{ t["remove_row"] }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="receiptRowsBody">
+                                        {% for row in receipt_rows %}
+                                        <tr class="receipt-row {% if not row.get('product_id') and not row.get('quantity') %}empty-row{% endif %}">
+                                            <td class="row-number">{{ loop.index }}</td>
+                                            <td>
+                                                <select name="product_id" class="form-select receipt-product-select">
+                                                    <option value="">{{ t["select_product"] }}</option>
+                                                    {% for product in products %}
+                                                    <option value="{{ product.id }}"
+                                                        {% if row.get('product_id','')|string == product.id|string %}selected{% endif %}>
+                                                        {{ product.name }} | {{ product.size or "-" }} | {{ "%.0f"|format(product.price) }} | {{ t["stock"] }}: {{ product.quantity }}
+                                                    </option>
+                                                    {% endfor %}
+                                                </select>
+                                            </td>
+                                            <td>
+                                                <input type="number" name="quantity" class="form-control receipt-qty" min="1" placeholder="" value="{{ row.get('quantity', '') }}">
+                                            </td>
+                                            <td class="text-center no-print">
+                                                <button type="button" class="btn btn-outline-danger btn-sm remove-row-btn" title="{{ t['remove_row'] }}">
+                                                    <i class="bi bi-x-lg"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <template id="receiptRowTemplate">
+                                <tr class="receipt-row empty-row">
+                                    <td class="row-number">1</td>
+                                    <td>
+                                        <select name="product_id" class="form-select receipt-product-select">
+                                            <option value="">{{ t["select_product"] }}</option>
+                                            {% for product in products %}
+                                            <option value="{{ product.id }}">
+                                                {{ product.name }} | {{ product.size or "-" }} | {{ "%.0f"|format(product.price) }} | {{ t["stock"] }}: {{ product.quantity }}
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <input type="number" name="quantity" class="form-control receipt-qty" min="1" placeholder="">
+                                    </td>
+                                    <td class="text-center no-print">
+                                        <button type="button" class="btn btn-outline-danger btn-sm remove-row-btn" title="{{ t['remove_row'] }}">
+                                            <i class="bi bi-x-lg"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </template>
+
+                            <button type="submit" class="btn btn-success btn-lg px-4 mt-3">{{ t["submit_receipt"] }}</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+    {% if page == "receipt_detail" %}
+        <div class="row justify-content-center">
+            <div class="col-lg-11">
+                <div class="card fade-up receipt-print-area">
+                    <div class="card-body px-4 pb-4 pt-0 receipt-rtl" id="printable-receipt" dir="rtl" lang="ur">
+
+                        <div class="d-flex justify-content-between align-items-center mb-3 no-print">
+                            <h4 class="mb-0 section-title">{{ receipt_t["receipt_details"] }}</h4>
+                            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm">{{ receipt_t["back"] }}</a>
+                        </div>
+
+                        {% if receipt_banner_url %}
+                            <img src="{{ receipt_banner_url }}" alt="{{ receipt_t['receipt_banner'] }}" class="receipt-banner">
+                        {% endif %}
+
+                        <div class="row g-3 mb-3">
+                            <div class="col-6 col-md-4">
+                                <div class="p-3">
+                                    <div class="text-muted">{{ receipt_t["receipt_number"] }}</div>
+                                    <div class="fw-semibold">{{ receipt.receipt_number }}</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <div class="p-3 ">
+                                    <div class="text-muted">{{ receipt_t["customer_name"] }}</div>
+                                    <div class="fw-semibold">{{ receipt.customer_name or "-" }}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive mt-0 mb-3">
+                            <table class="table table-bordered align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>{{ receipt_t["item_name"] }}</th>
+                                        <th style="width: 90px;">{{ receipt_t["image"] }}</th>
+                                        <th>{{ receipt_t["item_size"] }}</th>
+                                        <th>{{ receipt_t["item_price"] }}</th>
+                                        <th>{{ receipt_t["item_quantity"] }}</th>
+                                        <th>{{ receipt_t["total_amount"] }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in items %}
+                                    <tr>
+                                        <td>
+                                            <span class="urdu-name">{{ item.product_name or (item.product.name if item.product else '-') }}</span>
+                                        </td>
+                                        <td>
+                                            {% if item.product_image_url %}
+                                                <img src="{{ item.product_image_url }}" class="table-thumb" alt="{{ item.product_image_alt }}">
+                                            {% else %}
+                                                <div class="table-thumb thumb-placeholder">-</div>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ item.product_size or "-" }}</td>
+                                        <td>{{ "%.2f"|format(item.unit_price) }}</td>
+                                        <td>{{ item.quantity }}</td>
+                                        <td><strong>{{ "%.2f"|format(item.line_total) }}</strong></td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="text-end fw-bold fs-5 mb-3">
+                            {{ receipt_t["total_amount"] }}: <span class="text-success">{{ "%.2f"|format(receipt.total_amount) }}</span>
+                        </div>
+
+                        {% if receipt.discount_percent and receipt.discount_percent > 0 %}
+                        <div class="row g-3 mb-4 receipt-discount-info no-print">
+                            <div class="col-md-4">
+                                <div class="p-3 bg-warning bg-opacity-10 rounded-4 border border-warning">
+                                    <div class="text-muted small">{{ receipt_t["subtotal_amount"] }} (admin)</div>
+                                    <div class="fw-semibold">{{ "%.2f"|format(receipt.subtotal_amount or receipt.total_amount) }}</div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-4">
+                                <div class="p-3 bg-warning bg-opacity-10 rounded-4 border border-warning">
+                                    <div class="text-muted small">{{ receipt_t["discount_percent"] }} (admin)</div>
+                                    <div class="fw-semibold">{{ "%.2f"|format(receipt.discount_percent or 0) }}%</div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="p-3 bg-warning bg-opacity-10 rounded-4 border border-warning">
+                                    <div class="text-muted small">{{ receipt_t["discount_amount"] }} (admin)</div>
+                                    <div class="fw-semibold">{{ "%.2f"|format(receipt.discount_amount or 0) }}</div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <div class="d-flex flex-wrap gap-2 mb-2 no-print">
+                            <a href="{{ receipt_whatsapp_share_url }}" target="_blank" rel="noopener" class="btn btn-success">
+                                <i class="bi bi-whatsapp me-1"></i>{{ receipt_t["share_on_whatsapp"] }}
+                            </a>
+                            <button type="button" class="btn btn-primary copy-text-btn" data-copy-text="{{ receipt_share_text|e }}">
+                                <i class="bi bi-clipboard me-1"></i>{{ receipt_t["share_on_facebook"] }}
+                            </button>
+
+                            <button type="button" class="btn btn-dark" onclick="openReceiptPrint(true)">
+                                <i class="bi bi-printer me-1"></i>{{ receipt_t["print_with_barcode"] }}
+                            </button>
+                            <button type="button" class="btn btn-outline-dark" onclick="openReceiptPrint(false)">
+                                <i class="bi bi-printer me-1"></i>{{ receipt_t["print_without_barcode"] }}
+                            </button>
+                        </div>
+
+                        <div class="col-6 col-md-4">
+                            <div class="p-2">
+                                <div class="text-muted small-text">{{ receipt_t["total_items"] }}</div>
+                                <div class="fw-semibold small-text">{{ total_items }}</div>
+                            </div>
+                        </div>
+
+                        {% if show_payment_barcode and payment_barcode_url %}
+                        <div class="payment-barcode-box ml-4">
+                            <div class="text-muted small">{{ receipt_t["payment_barcode"] }}</div>
+                            <img src="{{ payment_barcode_url }}" alt="{{ receipt_t['payment_barcode'] }}" class="payment-barcode">
+                        </div>
+                        {% endif %}
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+</div>
+
+<div class="offline-toast" id="offlineToast">
+    <i class="bi bi-wifi-off"></i> آف لائن — Offline mode
+</div>
+
+<div class="modal fade" id="shortcutsModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold"><i class="bi bi-keyboard me-2"></i>{{ t["keyboard_shortcuts"] }}</h5>
+                <button type="button" class="btn btn-outline-primary btn-sm me-2" onclick="showShortcutSettingsModal()">Customize</button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <table class="table shortcut-table mb-0">
+                    <tbody>
+                        <tr><td><span class="shortcut-pill" id="sc-home">Alt + H</span></td><td>{{ t["home"] }} / {{ t["dashboard"] }}</td></tr>
+                        <tr><td><span class="shortcut-pill" id="sc-add">Alt + N</span></td><td>{{ t["add_product"] }}</td></tr>
+                        <tr><td><span class="shortcut-pill" id="sc-receipt">Alt + R</span></td><td>{{ t["create_receipt"] }}</td></tr>
+                        <tr><td><span class="shortcut-pill" id="sc-customers">Alt + C</span></td><td>{{ t["customers"] }}</td></tr>
+                        <tr><td><span class="shortcut-pill" id="sc-sync">Alt + S</span></td><td>{{ t["sync_now"] }}</td></tr>
+                        <tr><td><span class="shortcut-pill" id="sc-print">Ctrl + P</span></td><td>{{ t["print_receipt"] }}</td></tr>
+                        <tr><td><span class="shortcut-pill">?</span></td><td>{{ t["keyboard_shortcuts"] }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="shortcutSettingsModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content rounded-4 border-0">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold"><i class="bi bi-sliders me-2"></i>Custom Shortcut Settings</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted mb-3">Shortcuts are saved in this browser.</p>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Home / Dashboard</label>
+                        <input type="text" class="form-control shortcut-input" data-shortcut-key="home" placeholder="Alt+H">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Add Product</label>
+                        <input type="text" class="form-control shortcut-input" data-shortcut-key="add" placeholder="Alt+N">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Create Receipt</label>
+                        <input type="text" class="form-control shortcut-input" data-shortcut-key="receipt" placeholder="Alt+R">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Customers</label>
+                        <input type="text" class="form-control shortcut-input" data-shortcut-key="customers" placeholder="Alt+C">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Sync Now</label>
+                        <input type="text" class="form-control shortcut-input" data-shortcut-key="sync" placeholder="Alt+S">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Print Receipt</label>
+                        <input type="text" class="form-control shortcut-input" data-shortcut-key="print" placeholder="Ctrl+P">
+                    </div>
+                </div>
+                <div class="mt-3 text-muted small">
+                    Use combinations like <strong>Alt+H</strong>, <strong>Ctrl+Shift+P</strong>, or <strong>Alt+R</strong>.
+                </div>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-outline-secondary" onclick="resetShortcutSettings()">Reset Defaults</button>
+                <button type="button" class="btn btn-primary" onclick="saveShortcutSettings()">Save Shortcuts</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+const DEFAULT_SHORTCUTS = {
+    home: "Alt+H",
+    add: "Alt+N",
+    receipt: "Alt+R",
+    customers: "Alt+C",
+    sync: "Alt+S",
+    print: "Ctrl+P"
+};
+
+function loadShortcutSettings() {
+    try {
+        const raw = localStorage.getItem("appShortcuts");
+        const parsed = raw ? JSON.parse(raw) : {};
+        return { ...DEFAULT_SHORTCUTS, ...(parsed || {}) };
+    } catch {
+        return { ...DEFAULT_SHORTCUTS };
+    }
+}
+
+function saveShortcutSettingsToStorage(settings) {
+    localStorage.setItem("appShortcuts", JSON.stringify(settings));
+}
+
+function normalizeShortcutText(value) {
+    if (!value) return "";
+    return value
+        .replace(/\s+/g, "")
+        .replace(/⌘/g, "Meta")
+        .replace(/cmd/ig, "Meta")
+        .replace(/command/ig, "Meta")
+        .replace(/win(dows)?/ig, "Meta")
+        .replace(/control/ig, "Ctrl")
+        .replace(/option/ig, "Alt")
+        .replace(/return/ig, "Enter");
+}
+
+function parseShortcut(value) {
+    const raw = normalizeShortcutText(String(value || ""));
+    if (!raw) return null;
+
+    const parts = raw.split("+").filter(Boolean);
+    if (!parts.length) return null;
+
+    const shortcut = {
+        ctrl: false,
+        alt: false,
+        shift: false,
+        meta: false,
+        key: ""
+    };
+
+    parts.forEach(part => {
+        const p = part.toLowerCase();
+        if (p === "ctrl" || p === "control") shortcut.ctrl = true;
+        else if (p === "alt" || p === "option") shortcut.alt = true;
+        else if (p === "shift") shortcut.shift = true;
+        else if (p === "meta" || p === "cmd" || p === "command" || p === "win") shortcut.meta = true;
+        else shortcut.key = part.length === 1 ? part.toLowerCase() : part.toLowerCase();
+    });
+
+    if (!shortcut.key && parts.length) {
+        const last = parts[parts.length - 1];
+        if (!["ctrl", "control", "alt", "option", "shift", "meta", "cmd", "command", "win"].includes(last.toLowerCase())) {
+            shortcut.key = last.length === 1 ? last.toLowerCase() : last.toLowerCase();
+        }
+    }
+
+    return shortcut.key ? shortcut : null;
+}
+
+function shortcutToLabel(value) {
+    const s = parseShortcut(value);
+    if (!s) return "";
+    const parts = [];
+    if (s.ctrl) parts.push("Ctrl");
+    if (s.alt) parts.push("Alt");
+    if (s.shift) parts.push("Shift");
+    if (s.meta) parts.push("Meta");
+    parts.push(s.key.length === 1 ? s.key.toUpperCase() : s.key);
+    return parts.join(" + ");
+}
+
+function shortcutMatchesEvent(shortcutValue, e) {
+    const s = parseShortcut(shortcutValue);
+    if (!s) return false;
+
+    const key = (e.key || "").length === 1 ? e.key.toLowerCase() : e.key.toLowerCase();
+    return !!(
+        s.ctrl === e.ctrlKey &&
+        s.alt === e.altKey &&
+        s.shift === e.shiftKey &&
+        s.meta === e.metaKey &&
+        s.key === key
+    );
+}
+
+function updateShortcutUI() {
+    const shortcuts = loadShortcutSettings();
+    const map = [
+        ["home", "sc-home"],
+        ["add", "sc-add"],
+        ["receipt", "sc-receipt"],
+        ["customers", "sc-customers"],
+        ["sync", "sc-sync"],
+        ["print", "sc-print"]
+    ];
+
+    map.forEach(([key, id]) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = shortcutToLabel(shortcuts[key]) || DEFAULT_SHORTCUTS[key];
+    });
+
+    document.querySelectorAll(".shortcut-input").forEach(input => {
+        const k = input.dataset.shortcutKey;
+        input.value = shortcuts[k] || "";
+    });
+}
+
+function showShortcutsModal() {
+    const modal = new bootstrap.Modal(document.getElementById("shortcutsModal"));
+    modal.show();
+}
+
+function showShortcutSettingsModal() {
+    updateShortcutUI();
+    const modal = new bootstrap.Modal(document.getElementById("shortcutSettingsModal"));
+    modal.show();
+}
+
+function saveShortcutSettings() {
+    const inputs = document.querySelectorAll(".shortcut-input");
+    const next = {};
+    const used = new Set();
+
+    for (const input of inputs) {
+        const key = input.dataset.shortcutKey;
+        const raw = input.value.trim();
+        if (!raw) {
+            alert("Please fill all shortcut fields.");
+            return;
+        }
+
+        const parsed = parseShortcut(raw);
+        if (!parsed) {
+            alert(`Invalid shortcut for ${key}. Use like Alt+H or Ctrl+Shift+P.`);
+            return;
+        }
+
+        const label = shortcutToLabel(raw);
+        const normalized = label.toLowerCase();
+        if (used.has(normalized)) {
+            alert("Duplicate shortcut detected. Please use unique keys.");
+            return;
+        }
+        used.add(normalized);
+        next[key] = raw;
+    }
+
+    saveShortcutSettingsToStorage(next);
+    updateShortcutUI();
+    bootstrap.Modal.getInstance(document.getElementById("shortcutSettingsModal"))?.hide();
+}
+
+function resetShortcutSettings() {
+    saveShortcutSettingsToStorage(DEFAULT_SHORTCUTS);
+    updateShortcutUI();
+}
+
+function syncSidebarToggleIcon() {
+    const icon = document.getElementById("toggleIcon");
+    const collapseIcon = document.getElementById("sidebarCollapseIcon");
+    const collapseLabel = document.getElementById("sidebarCollapseLabel");
+    const isMobile = window.matchMedia("(max-width: 991.98px)").matches;
+    const sidebar = document.getElementById("sidebar");
+    const collapsed = document.body.classList.contains("sidebar-collapsed");
+    const open = sidebar?.classList.contains("open");
+
+    if (icon) {
+        if (isMobile) {
+            icon.className = open ? "bi bi-x-lg" : "bi bi-list";
+        } else {
+            icon.className = collapsed ? "bi bi-layout-sidebar-inset" : "bi bi-layout-sidebar-reverse";
+        }
+    }
+
+    if (collapseIcon) {
+        collapseIcon.className = collapsed ? "bi bi-layout-sidebar-inset-reverse" : "bi bi-layout-sidebar-inset";
+    }
+    if (collapseLabel) {
+        collapseLabel.textContent = collapsed ? "Show Sidebar" : "Hide Sidebar";
+    }
+}
+
+// FIX: removed re-reading localStorage here; state was already applied by the inline script.
+// We only remove the no-transition class after a rAF so transitions work for user-triggered toggles.
+function applySidebarCollapseState() {
+    const collapsed = localStorage.getItem("sidebarCollapsed") === "1";
+    document.body.classList.toggle("sidebar-collapsed", collapsed);
+    requestAnimationFrame(function() {
+        document.body.classList.remove("sidebar-instant");
+    });
+    syncSidebarToggleIcon();
+}
+
+function toggleSidebarCollapse() {
+    const collapsed = !(localStorage.getItem("sidebarCollapsed") === "1");
+    localStorage.setItem("sidebarCollapsed", collapsed ? "1" : "0");
+    document.body.classList.toggle("sidebar-collapsed", collapsed);
+    syncSidebarToggleIcon();
+}
+
+function toggleSidebar() {
+    const isMobile = window.matchMedia("(max-width: 991.98px)").matches;
+    const sidebar = document.getElementById("sidebar");
+    const backdrop = document.getElementById("sidebarBackdrop");
+
+    if (isMobile) {
+        const open = sidebar.classList.toggle("open");
+        backdrop.classList.toggle("open", open);
+        const icon = document.getElementById("toggleIcon");
+        if (icon) icon.className = open ? "bi bi-x-lg" : "bi bi-list";
+        return;
+    }
+
+    toggleSidebarCollapse();
+}
+
+function closeSidebar() {
+    const sidebar = document.getElementById("sidebar");
+    const backdrop = document.getElementById("sidebarBackdrop");
+    sidebar.classList.remove("open");
+    backdrop.classList.remove("open");
+    syncSidebarToggleIcon();
+}
+
+async function copyToClipboard(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        alert("Copied!");
+    } catch {
+        const t = document.createElement("textarea");
+        t.value = text;
+        document.body.appendChild(t);
+        t.select();
+        document.execCommand("copy");
+        document.body.removeChild(t);
+        alert("Copied!");
+    }
+}
+
+const onlineDot = document.getElementById("onlineDot");
+const onlineLabel = document.getElementById("onlineLabel");
+const offlineToast = document.getElementById("offlineToast");
+
+function updateOnlineStatus() {
+    const online = navigator.onLine;
+    if (onlineDot) onlineDot.className = "online-dot" + (online ? "" : " offline");
+    if (onlineLabel) onlineLabel.textContent = online ? "Online" : "Offline";
+    if (offlineToast) offlineToast.classList.toggle("show", !online);
+    if (online) attemptAutoSync();
+}
+
+window.addEventListener("online", updateOnlineStatus);
+window.addEventListener("offline", updateOnlineStatus);
+updateOnlineStatus();
+
+let lastSyncAt = null;
+let syncCooldown = false;
+
+async function triggerSync() {
+    if (!navigator.onLine) {
+        alert("آف لائن ہیں۔ انٹرنیٹ آنے پر خود بخود سنک ہوگا۔\nOffline – will sync when connected.");
+        return;
+    }
+    if (syncCooldown) return;
+
+    const btn = document.getElementById("syncBtn");
+    const icon = document.getElementById("syncIcon");
+    if (btn) btn.classList.add("syncing");
+    if (icon) icon.className = "bi bi-arrow-repeat";
+
+    try {
+        const res = await fetch("/api/sync/push", { method: "POST" });
+        const data = await res.json();
+        if (data.ok) {
+            lastSyncAt = new Date();
+            if (onlineLabel) onlineLabel.textContent = "Synced " + lastSyncAt.toLocaleTimeString();
+            syncCooldown = true;
+            setTimeout(() => { syncCooldown = false; }, 30000);
+        } else {
+            console.warn("Sync failed:", data.error);
+            if (onlineLabel) onlineLabel.textContent = "Sync failed";
+        }
+    } catch (err) {
+        console.warn("Sync error:", err);
+    } finally {
+        if (btn) btn.classList.remove("syncing");
+        if (icon) icon.className = "bi bi-cloud-arrow-up";
+    }
+}
+
+function attemptAutoSync() {
+    setTimeout(() => {
+        if (!lastSyncAt || (Date.now() - lastSyncAt) > 300000) {
+            triggerSync();
+        }
+    }, 3000);
+}
+
+function openReceiptPrint(includeBarcode) {
+    const baseUrl = document.body.dataset.receiptPrintBase || "";
+    if (!baseUrl) return;
+    const printUrl = `${baseUrl}?barcode=${includeBarcode ? "1" : "0"}&autoprint=1`;
+    window.open(printUrl, "_blank", "noopener,noreferrer");
+}
+
+function parseJsonScript(id, fallback) {
+    const el = document.getElementById(id);
+    if (!el) return fallback;
+    try {
+        return JSON.parse(el.textContent || "null") ?? fallback;
+    } catch {
+        return fallback;
+    }
+}
+
+const salesLabels = parseJsonScript("sales-labels-data", []);
+const salesValues = parseJsonScript("sales-values-data", []);
+const topProducts = parseJsonScript("top-products-data", []);
+const stockData = parseJsonScript("stock-data", { labels: [], values: [] });
+
+function createCharts() {
+    const salesCtx = document.getElementById("salesTrendChart");
+    if (salesCtx && salesLabels.length) {
+        new Chart(salesCtx, {
+            type: "line",
+            data: {
+                labels: salesLabels,
+                datasets: [{
+                    label: "{{ t['total_sales'] }}",
+                    data: salesValues,
+                    borderColor: "#5f6f82",
+                    backgroundColor: "rgba(95,111,130,0.12)",
+                    borderWidth: 2.5,
+                    tension: 0.35,
+                    fill: true,
+                    pointRadius: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { grid: { display: false }, ticks: { color: "#6b7280", maxTicksLimit: 8 } },
+                    y: { beginAtZero: true, ticks: { color: "#6b7280" } }
+                }
+            }
+        });
+    }
+
+    const topCtx = document.getElementById("topProductsChart");
+    if (topCtx && topProducts.length) {
+        new Chart(topCtx, {
+            type: "bar",
+            data: {
+                labels: topProducts.map(x => x.product_name),
+                datasets: [{
+                    data: topProducts.map(x => x.revenue),
+                    backgroundColor: [
+                        "rgba(95,111,130,0.75)",
+                        "rgba(91,127,107,0.75)",
+                        "rgba(176,137,104,0.75)",
+                        "rgba(118,133,160,0.75)",
+                        "rgba(147,122,102,0.75)"
+                    ],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                indexAxis: "y",
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { beginAtZero: true, ticks: { color: "#6b7280" } },
+                    y: { grid: { display: false }, ticks: { color: "#6b7280" } }
+                }
+            }
+        });
+    }
+
+    const stockCtx = document.getElementById("stockStatusChart");
+    if (stockCtx && stockData.labels && stockData.labels.length) {
+        new Chart(stockCtx, {
+            type: "doughnut",
+            data: {
+                labels: stockData.labels,
+                datasets: [{
+                    data: stockData.values,
+                    backgroundColor: [
+                        "rgba(91,127,107,0.80)",
+                        "rgba(176,137,104,0.80)",
+                        "rgba(155,91,91,0.80)"
+                    ],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: "68%",
+                plugins: { legend: { position: "bottom", labels: { color: "#6b7280" } } }
+            }
+        });
+    }
+}
+
+function syncCustomerFields() {
+    const select = document.getElementById("customerSelect");
+    const preview = document.getElementById("customerDiscountPreview");
+
+    if (!select || !preview) return;
+
+    const opt = select.options[select.selectedIndex];
+    if (!opt?.value) {
+        preview.textContent = "0%";
+        return;
+    }
+
+    preview.textContent = `${parseFloat(opt.dataset.discount || 0).toFixed(2)}%`;
+}
+
+function buildCustomerSuggestionList(query) {
+    const select = document.getElementById("customerSelect");
+    const box = document.getElementById("customerSuggestions");
+    if (!select || !box) return;
+
+    const q = (query || "").trim().toLowerCase();
+    if (!q) {
+        box.style.display = "none";
+        box.innerHTML = "";
+        return;
+    }
+
+    const items = Array.from(select.options)
+        .filter(opt => opt.value)
+        .map(opt => ({
+            value: opt.value,
+            name: opt.dataset.name || opt.textContent || "",
+            whatsapp: opt.dataset.whatsapp || "",
+            facebook: opt.dataset.facebook || "",
+            discount: opt.dataset.discount || "0",
+            label: opt.textContent || ""
+        }))
+        .filter(item => {
+            const hay = `${item.name} ${item.whatsapp} ${item.facebook} ${item.label}`.toLowerCase();
+            return hay.includes(q);
+        })
+        .slice(0, 8);
+
+    if (!items.length) {
+        box.innerHTML = `<div class="customer-suggestion-item text-muted">{{ t["customer_not_found"] }}</div>`;
+        box.style.display = "block";
+        return;
+    }
+
+    box.innerHTML = items.map(item => `
+        <div class="customer-suggestion-item" data-customer-id="${item.value}">
+            <div class="customer-suggestion-name">${escapeHtml(item.name)}</div>
+            <div class="customer-suggestion-meta">
+                WhatsApp: ${escapeHtml(item.whatsapp || "-")} · Discount: ${Number(item.discount || 0).toFixed(2)}%
+            </div>
+        </div>
+    `).join("");
+
+    box.style.display = "block";
+
+    box.querySelectorAll(".customer-suggestion-item").forEach(el => {
+        el.addEventListener("click", () => {
+            const id = el.dataset.customerId;
+            const select = document.getElementById("customerSelect");
+            if (select) {
+                select.value = id;
+                syncCustomerFields();
+                select.dispatchEvent(new Event("change"));
+            }
+            const input = document.getElementById("customerSearchInput");
+            if (input) input.value = "";
+            box.style.display = "none";
+            box.innerHTML = "";
+        });
+    });
+}
+
+function searchCustomer() {
+    const input = document.getElementById("customerSearchInput");
+    if (!input) return;
+    buildCustomerSuggestionList(input.value);
+    const box = document.getElementById("customerSuggestions");
+    if (box) box.style.display = "block";
+}
+
+function escapeHtml(s) {
+    return String(s || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+}
+
+function getReceiptRows() {
+    return Array.from(document.querySelectorAll("#receiptRowsBody .receipt-row"));
+}
+
+function rowHasData(row) {
+    if (!row) return false;
+    const select = row.querySelector(".receipt-product-select");
+    const qty = row.querySelector(".receipt-qty");
+    return Boolean((select && select.value) || (qty && qty.value));
+}
+
+function bindReceiptRow(row) {
+    const select = row.querySelector(".receipt-product-select");
+    const qty = row.querySelector(".receipt-qty");
+    const removeBtn = row.querySelector(".remove-row-btn");
+
+    if (select) {
+        select.addEventListener("change", syncReceiptRows);
+    }
+    if (qty) {
+        qty.addEventListener("input", syncReceiptRows);
+    }
+    if (removeBtn) {
+        removeBtn.addEventListener("click", () => {
+            row.remove();
+            syncReceiptRows();
+        });
+    }
+}
+
+function renumberReceiptRows() {
+    getReceiptRows().forEach((row, index) => {
+        const cell = row.querySelector(".row-number");
+        if (cell) cell.textContent = index + 1;
+    });
+}
+
+function updateReceiptOptionStates() {
+    const rows = getReceiptRows();
+    const selectedValues = rows
+        .map(row => row.querySelector(".receipt-product-select")?.value)
+        .filter(Boolean);
+
+    rows.forEach(row => {
+        const select = row.querySelector(".receipt-product-select");
+        if (!select) return;
+
+        Array.from(select.options).forEach(opt => {
+            if (!opt.value) {
+                opt.disabled = false;
+                return;
+            }
+            opt.disabled = selectedValues.includes(opt.value) && select.value !== opt.value;
+        });
+    });
+}
+
+function cleanupReceiptRows() {
+    const rows = getReceiptRows();
+    if (!rows.length) return;
+
+    rows.forEach((row, index) => {
+        if (index < rows.length - 1 && !rowHasData(row)) {
+            row.remove();
+        }
+    });
+}
+
+function ensureTrailingBlankRow() {
+    const rows = getReceiptRows();
+    if (!rows.length) {
+        addReceiptRow(false);
+        return;
+    }
+
+    const lastRow = rows[rows.length - 1];
+    if (rowHasData(lastRow)) {
+        addReceiptRow(false);
+    }
+}
+
+function syncReceiptRows() {
+    cleanupReceiptRows();
+    ensureTrailingBlankRow();
+
+    const rows = getReceiptRows();
+    rows.forEach(row => {
+        row.classList.toggle("empty-row", !rowHasData(row));
+    });
+
+    renumberReceiptRows();
+    updateReceiptOptionStates();
+}
+
+function addReceiptRow(focus = false) {
+    const tpl = document.getElementById("receiptRowTemplate");
+    const body = document.getElementById("receiptRowsBody");
+    if (!tpl || !body) return;
+
+    const node = tpl.content.firstElementChild.cloneNode(true);
+    bindReceiptRow(node);
+    body.appendChild(node);
+    syncReceiptRows();
+
+    if (focus) {
+        const productSelect = node.querySelector(".receipt-product-select");
+        if (productSelect) productSelect.focus();
+    }
+}
+
+if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/static/sw.js").catch(() => {});
+    });
+}
+
+document.addEventListener("click", function (e) {
+    const btn = e.target.closest(".copy-text-btn");
+    if (btn) {
+        copyToClipboard(btn.dataset.copyText || "");
+    }
+
+    const suggestions = document.getElementById("customerSuggestions");
+    const searchInput = document.getElementById("customerSearchInput");
+    if (suggestions && searchInput && !suggestions.contains(e.target) && e.target !== searchInput) {
+        suggestions.style.display = "none";
+    }
+});
+
+document.addEventListener("keydown", function(e) {
+    const tag = document.activeElement?.tagName?.toLowerCase();
+    const inInput = ["input", "textarea", "select"].includes(tag);
+
+    if (e.key === "?" && !inInput) {
+        e.preventDefault();
+        showShortcutsModal();
+        return;
+    }
+
+    const shortcuts = loadShortcutSettings();
+
+    if (!inInput) {
+        if (shortcutMatchesEvent(shortcuts.home, e)) { e.preventDefault(); location.href = "{{ url_for('index') }}"; return; }
+        if (shortcutMatchesEvent(shortcuts.add, e)) { e.preventDefault(); location.href = "{{ url_for('add_product') }}"; return; }
+        if (shortcutMatchesEvent(shortcuts.receipt, e)) { e.preventDefault(); location.href = "{{ url_for('create_receipt') }}"; return; }
+        if (shortcutMatchesEvent(shortcuts.customers, e)) { e.preventDefault(); location.href = "{{ url_for('customers') }}"; return; }
+        if (shortcutMatchesEvent(shortcuts.sync, e)) { e.preventDefault(); triggerSync(); return; }
+        if (shortcutMatchesEvent(shortcuts.print, e)) {
+            if (document.body.dataset.page === "receipt_detail") {
+                e.preventDefault();
+                window.print();
+            }
+            return;
+        }
+    }
+
+    if (e.key === "Escape") {
+        const sb = document.getElementById("sidebar");
+        const suggestions = document.getElementById("customerSuggestions");
+        if (suggestions && suggestions.style.display === "block") {
+            suggestions.style.display = "none";
+            return;
+        }
+        if (sb?.classList.contains("open")) {
+            closeSidebar();
+        }
+    }
+});
+
+window.addEventListener("load", function () {
+    applySidebarCollapseState();
+    createCharts();
+    updateShortcutUI();
+    syncCustomerFields();
+
+    document.querySelectorAll(".progress-bar[data-pct]").forEach((el) => {
+        const pct = el.dataset.pct || "0";
+        el.style.width = `${pct}%`;
+    });
+
+    const cs = document.getElementById("customerSelect");
+    if (cs) cs.addEventListener("change", syncCustomerFields);
+
+    const searchInput = document.getElementById("customerSearchInput");
+    if (searchInput) {
+        searchInput.addEventListener("input", function () {
+            buildCustomerSuggestionList(this.value);
+        });
+        searchInput.addEventListener("focus", function () {
+            buildCustomerSuggestionList(this.value);
+        });
+        searchInput.addEventListener("keydown", function (e) {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                searchCustomer();
+            }
+        });
+    }
+
+    const receiptRowsBody = document.getElementById("receiptRowsBody");
+    if (receiptRowsBody) {
+        getReceiptRows().forEach(bindReceiptRow);
+        syncReceiptRows();
+    }
+
+    if ((document.body.dataset.autoprint || "0") === "1") {
+        setTimeout(() => window.print(), 1200);
+    }
+
+    syncSidebarToggleIcon();
+});
+
+window.addEventListener("resize", () => {
+    syncSidebarToggleIcon();
+});
+</script>
+</body>
+</html>
